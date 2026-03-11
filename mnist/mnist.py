@@ -3280,7 +3280,7 @@ def main():
     parser = argparse.ArgumentParser(description="Distributed Gradient Averaging")
     parser.add_argument("--server", action="store_true")
     parser.add_argument("--client", action="store_true")
-    parser.add_argument("--host", default="localhost")
+    parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", default=9999, type=int)
     parser.add_argument("--workers", default=1, type=int)
     parser.add_argument("--min_workers", default=1, type=int)
