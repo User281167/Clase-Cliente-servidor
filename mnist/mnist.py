@@ -3221,20 +3221,20 @@ class DistributedGradientAvgStrategy(ClientStrategy):
 
 
 # %%
-def run_server(server_host: str, server_port: int):
+def run_server(server_host: str, server_port: int, workers: int=1, min_workers: int=1, lr=0.05, epochs=200):
     net = Network()
     net.add(Dense(784, 10, ReLU(), RandomNormal(0.01)))
     net.add(Dense(10, 10, Softmax(), RandomNormal(0.01)))
 
-    strategy = ServerGradientAvgStrategy(batch_size=len(X_train) // 2, min_workers=1)
+    strategy = ServerGradientAvgStrategy(batch_size=len(X_train) // workers, min_workers=min_workers)
     strategy.start_server(server_port, server_host)
 
     try:
-        model = Model(net, MeanSquaredError(), SGD(0.05), strategy=strategy)
+        model = Model(net, MeanSquaredError(), SGD(lr), strategy=strategy)
         history = model.fit(
             X_train,
             y_train,
-            epochs=200,
+            epochs=epochs,
             verbose_epoch=25,
             X_val=X_test,
             y_val=y_test,
@@ -3272,7 +3272,8 @@ def main():
     # arg 3 --port
     #
     # ejemplo:
-    # python mnist.py --server --host 0.0.0.0 --port 9999
+    # python mnist.py --server --host 0.0.0.0 --port 9999 --workers 2 --min_workers 1
+    # python mnist.py --client --host 0.0.0.0 --port 9999
     #
     print_system_info()
 
@@ -3281,12 +3282,16 @@ def main():
     parser.add_argument("--client", action="store_true")
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", default=9999, type=int)
+    parser.add_argument("--workers", default=1, type=int)
+    parser.add_argument("--min_workers", default=1, type=int)
+    parser.add_argument("--lr", default=0.05, type=float)
+    parser.add_argument("--epochs", default=200, type=int)
 
     args = parser.parse_args()
     print(args)
 
     if args.server:
-        run_server(args.host, args.port)
+        run_server(args.host, args.port, args.workers, args.min_workers, args.lr, args.epochs)
     elif args.client:
         run_client(args.host, args.port)
     else:
