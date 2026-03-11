@@ -3270,9 +3270,11 @@ def main():
     # arg 1 --server | --client
     # arg 2 --host
     # arg 3 --port
-
+    #
     # ejemplo:
     # python mnist.py --server --host 0.0.0.0 --port 9999
+    #
+    print_system_info()
 
     parser = argparse.ArgumentParser(description="Distributed Gradient Averaging")
     parser.add_argument("--server", action="store_true")
