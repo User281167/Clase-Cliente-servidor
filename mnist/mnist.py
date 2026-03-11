@@ -3250,12 +3250,12 @@ def run_server(server_host: str, server_port: int, workers: int=1, min_workers: 
 
 
 # %%
-def run_client(server_host: str, server_port: int):
+def run_client(server_host: str, server_port: int, lr=float):
     net = Network()
     net.add(Dense(784, 10, ReLU(), RandomNormal(0.01)))
     net.add(Dense(10, 10, Softmax(), RandomNormal(0.01)))
 
-    model = Model(net, MeanSquaredError(), SGD(0.05))
+    model = Model(net, MeanSquaredError(), SGD(lr))
     strategy = DistributedGradientAvgStrategy(server_host, server_port)
 
     try:
@@ -3293,7 +3293,7 @@ def main():
     if args.server:
         run_server(args.host, args.port, args.workers, args.min_workers, args.lr, args.epochs)
     elif args.client:
-        run_client(args.host, args.port)
+        run_client(args.host, args.port, args.lr)
     else:
         raise ValueError("No se especificó --server o --client")
 
