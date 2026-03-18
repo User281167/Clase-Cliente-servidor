@@ -9,34 +9,32 @@
 
 from __future__ import annotations
 
+import argparse
+import os
+import platform
+import time
+from abc import ABC, abstractmethod
+from functools import wraps
+from typing import Tuple
+
+import cpuinfo
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import psutil
+import torch
+
 # %%
 # import os
-
 # # ── Configuración de threads ──────────────────────────────
 # os.environ["OMP_NUM_THREADS"]     = "1"
 # os.environ["MKL_NUM_THREADS"]     = "1"
 # os.environ["OPENBLAS_NUM_THREADS"] = "1"
 # os.environ["NUMEXPR_NUM_THREADS"] = "1"
-
-
 # ## Librerías - utilidades
-
 # %%
 from kagglehub import dataset_download
-from typing import Tuple
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from abc import ABC, abstractmethod
-import torch
-import platform
-import psutil
-import cpuinfo
-import time
-from functools import wraps
-import os
 from loky import get_reusable_executor
-import argparse
 
 
 # %%
@@ -961,9 +959,9 @@ class Network:
 
         print(f"┌{sep}┐")
         print(f"│{'Network Summary':^52}│")
-        print(f"├{'─'*22}┬{'─'*11}┬{'─'*16}┤")
+        print(f"├{'─' * 22}┬{'─' * 11}┬{'─' * 16}┤")
         print(f"│{'Layer':<22}│{'Shape':^11}│{'Params':>14}  │")
-        print(f"├{'─'*22}┼{'─'*11}┼{'─'*16}┤")
+        print(f"├{'─' * 22}┼{'─' * 11}┼{'─' * 16}┤")
 
         for layer in self.layers:
             if layer.weights is not None:
@@ -976,7 +974,7 @@ class Network:
                 name = repr(layer)
                 print(f"│{name:<22}│{'—':^11}│{'0':>14}  │")
 
-        print(f"├{'─'*22}┴{'─'*11}┴{'─'*16}┤")
+        print(f"├{'─' * 22}┴{'─' * 11}┴{'─' * 16}┤")
         print(f"│{'Total params':<22}  {total:>26,}  │")
         print(f"└{sep}┘")
 
@@ -1010,13 +1008,23 @@ class History:
         epochs         : list[int]    — índices de epoch registrados
     """
 
-    def __init__(self):
+    def __init__(self, output_dir: str = None):
         self.train_loss = []
         self.train_accuracy = []
         self.train_grad_norm = []
         self.val_loss = []
         self.val_accuracy = []
         self.epochs = []
+        self.output_dir = output_dir
+
+        if output_dir is not None:
+            os.makedirs(self.output_dir, exist_ok=True)
+
+    def set_output_dir(self, output_dir: str) -> None:
+        self.output_dir = output_dir
+
+        if output_dir is not None:
+            os.makedirs(self.output_dir, exist_ok=True)
 
     def record(
         self,
@@ -1090,7 +1098,13 @@ class History:
 
         plt.suptitle("Training History", fontsize=13, fontweight="bold")
         plt.tight_layout()
+
+        if self.output_dir is not None:
+            path = os.path.join(self.output_dir, "training_plot.png")
+            plt.savefig(path, dpi=120)
+
         plt.show()
+
 
     def plot_comparison(
         self,
@@ -1162,9 +1176,9 @@ class History:
         sep = "─" * 45
         print(f"┌{sep}┐")
         print(f"│{'Training Summary':^45}│")
-        print(f"├{'─'*21}┬{'─'*11}┬{'─'*11}┤")
+        print(f"├{'─' * 21}┬{'─' * 11}┬{'─' * 11}┤")
         print(f"│{'Métrica':<21}│{'Best':^11}│{'Last':^11}│")
-        print(f"├{'─'*21}┼{'─'*11}┼{'─'*11}┤")
+        print(f"├{'─' * 21}┼{'─' * 11}┼{'─' * 11}┤")
 
         for name, values, best_fn in metrics:
             if values:
@@ -1172,7 +1186,75 @@ class History:
                 last = values[-1]
                 print(f"│{name:<21}│{best:^11.4f}│{last:^11.4f}│")
 
-        print(f"└{'─'*21}┴{'─'*11}┴{'─'*11}┘")
+        print(f"└{'─' * 21}┴{'─' * 11}┴{'─' * 11}┘")
+
+    def save_csv(self, filename: str = "history.csv") -> None:
+        data = {
+            "epoch": self.epochs,
+            "train_loss": self.train_loss,
+            "train_acc": self.train_accuracy,
+            "grad_norm": self.train_grad_norm,
+        }
+
+        if self.val_loss:
+            data["val_loss"] = self.val_loss
+            data["val_acc"] = self.val_accuracy
+
+        df = pd.DataFrame(data)
+        path = os.path.join(self.output_dir, filename)
+        df.to_csv(path, index=False)
+
+    def save_plots(self):
+        # Loss
+        plt.figure()
+        plt.plot(self.epochs, self.train_loss, label="Train")
+        if self.val_loss:
+            plt.plot(self.epochs, self.val_loss, label="Val")
+
+        plt.legend()
+        plt.title("Loss")
+        plt.savefig(os.path.join(self.output_dir, "loss.png"))
+        plt.close()
+
+        # Accuracy
+        plt.figure()
+        plt.plot(self.epochs, self.train_accuracy, label="Train")
+        if self.val_accuracy:
+            plt.plot(self.epochs, self.val_accuracy, label="Val")
+
+        plt.legend()
+        plt.title("Accuracy")
+        plt.savefig(os.path.join(self.output_dir, "accuracy.png"))
+        plt.close()
+
+        # Grad norm
+        if any(g > 0 for g in self.train_grad_norm):
+            plt.figure()
+            plt.plot(self.epochs, self.train_grad_norm)
+            plt.title("Gradient Norm")
+            plt.savefig(os.path.join(self.output_dir, "grad_norm.png"))
+            plt.close()
+
+    def save_summary(self):
+        path = os.path.join(self.output_dir, "summary.txt")
+
+        with open(path, "w") as f:
+            for name, values, fn in [
+                ("train_loss", self.train_loss, min),
+                ("train_acc", self.train_accuracy, max),
+                ("grad_norm", self.train_grad_norm, min),
+            ]:
+                if values:
+                    f.write(f"{name}: best={fn(values):.4f}, last={values[-1]:.4f}\n")
+
+            if self.val_loss:
+                f.write(f"val_loss: best={min(self.val_loss):.4f}, last={self.val_loss[-1]:.4f}\n")
+                f.write(f"val_acc: best={max(self.val_accuracy):.4f}, last={self.val_accuracy[-1]:.4f}\n")
+
+    def save_all(self):
+        self.save_csv()
+        self.save_plots()
+        self.save_summary()
 
     def __repr__(self) -> str:
         if not self.epochs:
@@ -1197,8 +1279,8 @@ class History:
 # ## Modelo
 
 # %%
-from typing import Union
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Union
 
 
 class TrainingStrategy(ABC):
@@ -1754,7 +1836,7 @@ class Model:
         """
         loss, acc = self._evaluate_split(X, y)
         if verbose:
-            print(f"Loss: {loss:.4f}  |  Accuracy: {acc:.4f} ({acc*100:.2f}%)")
+            print(f"Loss: {loss:.4f}  |  Accuracy: {acc:.4f} ({acc * 100:.2f}%)")
 
         return {"loss": loss, "accuracy": acc}
 
@@ -1836,7 +1918,7 @@ class Model:
                 axes[1].text(
                     j,
                     i,
-                    f"{cm_norm[i,j]:.2f}",
+                    f"{cm_norm[i, j]:.2f}",
                     ha="center",
                     va="center",
                     color="white" if cm_norm[i, j] > 0.5 else "black",
@@ -1875,11 +1957,11 @@ class Model:
         K = cm.shape[0]
         eps = 1e-8
 
-        print(f"\n{'─'*52}")
+        print(f"\n{'─' * 52}")
         print(
             f"{'Clase':^8} {'Precision':^12} {'Recall':^12} {'F1':^12} {'Samples':^8}"
         )
-        print(f"{'─'*52}")
+        print(f"{'─' * 52}")
 
         precisions = recalls = f1s = 0.0
 
@@ -1898,9 +1980,11 @@ class Model:
 
             print(f"{k:^8} {precision:^12.4f} {recall:^12.4f} {f1:^12.4f} {samples:^8}")
 
-        print(f"{'─'*52}")
-        print(f"{'avg':^8} {precisions/K:^12.4f} {recalls/K:^12.4f} {f1s/K:^12.4f}")
-        print(f"{'─'*52}\n")
+        print(f"{'─' * 52}")
+        print(
+            f"{'avg':^8} {precisions / K:^12.4f} {recalls / K:^12.4f} {f1s / K:^12.4f}"
+        )
+        print(f"{'─' * 52}\n")
 
     # ──────────────────────────────────────────
     # Métricas
@@ -2135,7 +2219,7 @@ def run_study(
     for i, seed in enumerate(seeds):
         if verbose:
             print(
-                f"[{strategy_name}] rep {i+1:>3}/{repetitions}  seed={seed}", end="\r"
+                f"[{strategy_name}] rep {i + 1:>3}/{repetitions}  seed={seed}", end="\r"
             )
 
         # ── Inicialización reproducible ──
@@ -2252,14 +2336,14 @@ import base64
 import json
 import logging
 import pickle
+import select
+import selectors
 import socket
 import threading
 import time
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
-import select
-import selectors
 from concurrent.futures import ThreadPoolExecutor
+from typing import List, Optional, Tuple
 
 log = logging.getLogger("distributed_training")
 log.setLevel(logging.DEBUG)
@@ -2757,6 +2841,18 @@ class ServerGradientAvgStrategy(ServerTrainingStrategy):
         self.batch_size = batch_size
         self._epoch_seed = 0  # incrementa cada época para variar el shuffle
 
+        self.metrics = pd.DataFrame(
+            columns=[
+                "epoch",        # Época
+                "time",         # Tiempo total de la época
+                "total_loss",   # Pérdida total
+                "accuracy",     # Accuracy global
+                "gnorm",        # Norma de gradiente global
+                "throughput",   # Throughput (opcional)
+                "n_workers",    # Número de workers
+            ]
+        )
+
     def _broadcast_weights(self, W0, b0):
         # seed va embebido — cliente no necesita mensaje assign separado
         seed = int(time.time()) ^ (self._epoch_seed * 0x9E3779B9)
@@ -2785,6 +2881,8 @@ class ServerGradientAvgStrategy(ServerTrainingStrategy):
         Ejecuta una época distribuida y actualiza los pesos del modelo.
         Devuelve (loss, acc, gnorm) con tiempos por sección.
         """
+        t0 = time.elapsed()
+
         n_workers = self._wait_workers()
 
         if n_workers is None:
@@ -2806,6 +2904,8 @@ class ServerGradientAvgStrategy(ServerTrainingStrategy):
         gW_acc = [np.zeros_like(w) for w in W0]
         gb_acc = [np.zeros_like(b) for b in b0]
         total_loss = 0.0
+        total_accuracy = 0.0
+        total_gnorm = 0.0
 
         for grads_W, grads_b, loss in results:
             for i in range(len(gW_acc)):
@@ -2828,6 +2928,21 @@ class ServerGradientAvgStrategy(ServerTrainingStrategy):
 
         y_pred_new = model.network.forward(X_sample, training=False)
         acc = float(model._accuracy(y_sample, y_pred_new))
+
+        # Calcular throughput
+        elapsed_time = t0 - time.elapsed()  # tiempo de la época
+        throughput = sample_size / elapsed_time
+
+        # Guardar métricas en el dataframe
+        self.metrics.loc[len(self.metrics)] = [
+            self._epoch_seed,          # epoch
+            elapsed_time,              # time
+            total_loss / m,            # total_loss
+            acc,                       # accuracy
+            gnorm,                     # grad norm
+            throughput,                # throughput
+            n_workers                  # n_workers
+        ]
 
         return total_loss / m, acc, gnorm
 
@@ -3121,6 +3236,25 @@ class DistributedGradientAvgStrategy(ClientStrategy):
         self._X: Optional[np.ndarray] = None
         self._y: Optional[np.ndarray] = None
 
+        self._local_epoch = 0
+
+        self.metrics = pb.Dataframe(
+            columns=[
+                "worker_id",
+                "step",
+                "local_epoch",
+                "time",
+                "loss",
+                "gnorm",
+                "throughput",
+                "batch_len",
+                "n_batches",
+                "batch_size",
+                "seed",
+                "start",
+            ]
+        )
+
     # ── Handlers ──────────────────────────────────────────────────────────
 
     def _load_data(self, msg: dict) -> None:
@@ -3131,6 +3265,8 @@ class DistributedGradientAvgStrategy(ClientStrategy):
         start = msg.get("start", 0)
         n_batches = msg.get("n_batches", 0)
         batch_size = msg.get("batch_size", 0)
+        self._local_epoch += 1
+        self._run_id = int(time.time())
 
         self._assignment["seed"] = seed
         self._assignment["start"] = start
@@ -3142,6 +3278,7 @@ class DistributedGradientAvgStrategy(ClientStrategy):
     @time_wrapper
     def _handle_step(self, _msg: dict) -> None:
         """Ejecuta un paso de entrenamiento y envía resultado al servidor."""
+        t0 = time.elapsed()
         self._load_data(_msg)
 
         if self._W0 is None:
@@ -3192,6 +3329,23 @@ class DistributedGradientAvgStrategy(ClientStrategy):
         )
         log.debug(f"Resultado enviado | loss={loss:.4f}")
 
+        t1 = time.elapsed()
+
+        elapse_time = t1 - t0
+
+        self.metrics.loc[len(self.metrics)] = [
+            self._worker_id,
+            self._local_epoch,
+            elapse_time,
+            loss,
+            gnorm: model._compute_grad_norm(),
+            len(X_b) / elapse_time,
+            n_batches,
+            batch_size,
+            seed,
+            start,
+        ]
+
     # ── run ───────────────────────────────────────────────────────────────
 
     def run(self, model, X: np.ndarray, y: np.ndarray) -> None:
@@ -3211,6 +3365,12 @@ class DistributedGradientAvgStrategy(ClientStrategy):
             )
         finally:
             # Garantiza cierre del socket aunque run() termine por excepcion
+            filename = (
+                f"metrics_worker{self._worker_id}"
+                f"_run{self._run_id}"
+                f"_{time.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            )
+            self.metrics.to_csv(filename)
             self.close()
 
         log.info("Cliente finalizado")
@@ -3221,13 +3381,24 @@ class DistributedGradientAvgStrategy(ClientStrategy):
 
 
 # %%
-def run_server(server_host: str, server_port: int, workers: int=1, min_workers: int=1, lr=0.05, epochs=200):
+def run_server(
+    server_host: str,
+    server_port: int,
+    workers: int = 1,
+    min_workers: int = 1,
+    lr=0.05,
+    epochs=200,
+):
     net = Network()
     net.add(Dense(784, 10, ReLU(), RandomNormal(0.01)))
     net.add(Dense(10, 10, Softmax(), RandomNormal(0.01)))
 
-    strategy = ServerGradientAvgStrategy(batch_size=len(X_train) // workers, min_workers=min_workers)
+    strategy = ServerGradientAvgStrategy(
+        batch_size=len(X_train) // workers, min_workers=min_workers
+    )
     strategy.start_server(server_port, server_host)
+
+    save_folder = f"metrics__{time.now().strftime('%Y%m%d_%H%M%S')}"
 
     try:
         model = Model(net, MeanSquaredError(), SGD(lr), strategy=strategy)
@@ -3239,14 +3410,33 @@ def run_server(server_host: str, server_port: int, workers: int=1, min_workers: 
             X_val=X_test,
             y_val=y_test,
         )
+        history.set_output_dir(save_folder)
         history.plot()
         model.evaluate(X_test, y_test)
         model.confusion_matrix(X_test, y_test)
         model.classification_report(X_test, y_test)
+        history.save_all()
     except Exception as e:
         print(e)
     finally:
         strategy.stop_server()
+        strategy.metrics.to_csv(f"{metrics_folder}/metrics_server.csv", index=False)
+
+        # Guardar descripción de métricas
+        description = strategy.metrics.describe(percentiles=[0.1, 0.5, 0.9], include='all')
+        description.to_csv(f"{save_folder}/metrics_description.csv", index=True)
+
+        # guardar args
+        with open(f"{save_folder}/args.json", "w") as f:
+            json.dump(
+                {
+                    "lr": lr,
+                    "epochs": epochs,
+                    "workers": workers,
+                    "min_workers": min_workers,
+                },
+                f,
+            )
 
 
 # %%
@@ -3258,13 +3448,32 @@ def run_client(server_host: str, server_port: int, lr=float):
     model = Model(net, MeanSquaredError(), SGD(lr))
     strategy = DistributedGradientAvgStrategy(server_host, server_port)
 
+    save_folder = f"metrics_client__{time.now().strftime('%Y%m%d_%H%M%S')}"
+
     try:
         strategy.connect()
         strategy.run(model, X_train, y_train)
     except Exception as e:
         print(e)
         strategy.close()
+    finally:
+        # Guardar métricas locales del worker
+        strategy.metrics.to_csv(f"{save_folder}/metrics_client.csv", index=False)
 
+        # Guardar la descripción de las métricas (stats generales)
+        description = strategy.metrics.describe(percentiles=[0.1, 0.5, 0.9], include='all')
+        description.to_csv(f"{save_folder}/metrics_description.csv", index=True)
+
+        # Guardar args
+        with open(f"{save_folder}/args.json", "w") as f:
+            json.dump(
+                {
+                    "lr": lr,
+                    "server_host": server_host,
+                    "server_port": server_port,
+                },
+                f,
+            )
 
 def main():
     # arg 1 --server | --client
@@ -3291,7 +3500,9 @@ def main():
     print(args)
 
     if args.server:
-        run_server(args.host, args.port, args.workers, args.min_workers, args.lr, args.epochs)
+        run_server(
+            args.host, args.port, args.workers, args.min_workers, args.lr, args.epochs
+        )
     elif args.client:
         run_client(args.host, args.port, args.lr)
     else:
