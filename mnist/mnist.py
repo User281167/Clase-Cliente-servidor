@@ -1105,7 +1105,6 @@ class History:
 
         plt.show()
 
-
     def plot_comparison(
         self,
         other: "History",
@@ -1248,8 +1247,12 @@ class History:
                     f.write(f"{name}: best={fn(values):.4f}, last={values[-1]:.4f}\n")
 
             if self.val_loss:
-                f.write(f"val_loss: best={min(self.val_loss):.4f}, last={self.val_loss[-1]:.4f}\n")
-                f.write(f"val_acc: best={max(self.val_accuracy):.4f}, last={self.val_accuracy[-1]:.4f}\n")
+                f.write(
+                    f"val_loss: best={min(self.val_loss):.4f}, last={self.val_loss[-1]:.4f}\n"
+                )
+                f.write(
+                    f"val_acc: best={max(self.val_accuracy):.4f}, last={self.val_accuracy[-1]:.4f}\n"
+                )
 
     def save_all(self):
         self.save_csv()
@@ -1279,7 +1282,7 @@ class History:
 # ## Modelo
 
 # %%
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from typing import Union
 
 
@@ -1721,6 +1724,113 @@ class ParallelWeightAvgStrategy(TrainingStrategy):
             layer.bias = b_acc[i] / n_batches
 
         return (epoch_loss / n_batches, epoch_acc / n_batches, epoch_gnorm / n_batches)
+
+
+class GradientAvgStrategy(TrainingStrategy):
+    """
+    Promedia los gradientes de todas las muestras en cada época.
+
+    Algoritmo por época:
+    época 1:
+        W_0 = pesos actuales (fijo para todos los batches)
+
+        batch 1 → forward+backward → W_grad_1  (desde W_0)
+        batch 2 → forward+backward → W_grad_2  (desde W_0)
+        batch 3 → forward+backward → W_grad_3  (desde W_0)
+        ...
+
+        W_grad = (W_1 + W_2 + ... + W_M) / M   ← promedio de destinos
+        W = SGD(W_grad)                        ← arranca la siguiente época
+
+    época 2:
+        batch 1 → forward+backward → W_grad_1  (desde W)
+        batch 2 → forward+backward → W_grad_2  (desde W)
+        batch 3 → forward+backward → W_grad_3  (desde W)
+        W_grad = (W_1 + W_2 + W_3) / M
+        W = SGD(W_grad)
+    """
+
+    def __init__(self, batch_size: int, shuffle=True):
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+        self._local_epoch = 0
+
+        self.metrics = pd.DataFrame(
+            columns=[
+                "local_epoch",
+                "time",
+                "loss",
+                "gnorm",
+                "throughput",
+                "batch_size",
+            ]
+        )
+
+    def step(self, model, X, y):
+        t0 = time.perf_counter()
+        self._local_epoch += 1
+
+        n = len(X)
+
+        if self.shuffle:
+            idx = np.random.permutation(n)
+            X, y = X[idx], y[idx]
+
+        layers = model.network.trainable_layers()
+
+        W0 = [l.weights.copy() for l in layers]
+        b0 = [l.bias.copy() for l in layers]
+        W_acc = [np.zeros_like(l.weights) for l in layers]
+        b_acc = [np.zeros_like(l.bias) for l in layers]
+
+        epoch_loss = epoch_acc = epoch_gnorm = 0.0
+        n_batches = 0
+
+        for start in range(0, n, self.batch_size):
+            # Cada batch parte del mismo punto W_0
+            for i, layer in enumerate(layers):
+                layer.weights = W0[i].copy()
+                layer.bias = b0[i].copy()
+
+            X_b = X[start : start + self.batch_size]
+            y_b = y[start : start + self.batch_size]
+            y_pred = model.network.forward(X_b, training=True)
+            loss = model.cost.function(y_b, y_pred)
+            delta = model.cost.derivative(y_b, y_pred)
+            model.network.backward(delta)
+
+            # Acumular W_b — el destino de este batch
+            for i, layer in enumerate(layers):
+                W_acc[i] += layer.d_weights
+                b_acc[i] += layer.d_bias
+
+            epoch_loss += float(loss)
+            epoch_acc += float(model._accuracy(y_b, y_pred))
+            n_batches += 1
+
+        # Cargar promedio de destinos
+        for i, layer in enumerate(layers):
+            layer.d_weights = W_acc[i] / n_batches
+            layer.d_bias = b_acc[i] / n_batches
+
+        # Aplicar paso del optimizer para obtener W_b
+        model.optimizer.step(layers)
+        epoch_gnorm += model._compute_grad_norm()
+
+        elapsed = time.perf_counter() - t0
+        throughput = self.batch_size / elapsed
+
+        self.metrics.loc[len(self.metrics)] = {
+            "local_epoch": self._local_epoch,
+            "time": elapsed,
+            "loss": epoch_loss / n_batches,
+            "gnorm": epoch_gnorm,
+            "throughput": throughput,
+            "batch_size": self.batch_size,
+        }
+
+        return epoch_loss / n_batches, epoch_acc / n_batches, epoch_gnorm
 
 
 # %%
@@ -2824,6 +2934,9 @@ class ServerWeightAvgStrategy(ServerTrainingStrategy):
         return total_loss / m, total_acc / m, total_gnorm / m
 
 
+from datetime import datetime
+
+
 class ServerGradientAvgStrategy(ServerTrainingStrategy):
     """
     Similar a WeightAvgStrategy pero promedia gradientes en vez de pesos
@@ -2843,13 +2956,13 @@ class ServerGradientAvgStrategy(ServerTrainingStrategy):
 
         self.metrics = pd.DataFrame(
             columns=[
-                "epoch",        # Época
-                "time",         # Tiempo total de la época
-                "total_loss",   # Pérdida total
-                "accuracy",     # Accuracy global
-                "gnorm",        # Norma de gradiente global
-                "throughput",   # Throughput (opcional)
-                "n_workers",    # Número de workers
+                "epoch",  # Época
+                "time",  # Tiempo total de la época
+                "total_loss",  # Pérdida total
+                "accuracy",  # Accuracy global
+                "gnorm",  # Norma de gradiente global
+                "throughput",  # Throughput (opcional)
+                "n_workers",  # Número de workers
             ]
         )
 
@@ -2881,7 +2994,7 @@ class ServerGradientAvgStrategy(ServerTrainingStrategy):
         Ejecuta una época distribuida y actualiza los pesos del modelo.
         Devuelve (loss, acc, gnorm) con tiempos por sección.
         """
-        t0 = time.elapsed()
+        t0 = time.perf_counter()
 
         n_workers = self._wait_workers()
 
@@ -2904,8 +3017,6 @@ class ServerGradientAvgStrategy(ServerTrainingStrategy):
         gW_acc = [np.zeros_like(w) for w in W0]
         gb_acc = [np.zeros_like(b) for b in b0]
         total_loss = 0.0
-        total_accuracy = 0.0
-        total_gnorm = 0.0
 
         for grads_W, grads_b, loss in results:
             for i in range(len(gW_acc)):
@@ -2930,20 +3041,19 @@ class ServerGradientAvgStrategy(ServerTrainingStrategy):
         acc = float(model._accuracy(y_sample, y_pred_new))
 
         # Calcular throughput
-        elapsed_time = t0 - time.elapsed()  # tiempo de la época
+        elapsed_time = time.perf_counter() - t0  # tiempo de la época
         throughput = sample_size / elapsed_time
 
         # Guardar métricas en el dataframe
         self.metrics.loc[len(self.metrics)] = [
-            self._epoch_seed,          # epoch
-            elapsed_time,              # time
-            total_loss / m,            # total_loss
-            acc,                       # accuracy
-            gnorm,                     # grad norm
-            throughput,                # throughput
-            n_workers                  # n_workers
+            self._epoch_seed,  # epoch
+            elapsed_time,  # time
+            total_loss / m,  # total_loss
+            acc,  # accuracy
+            gnorm,  # grad norm
+            throughput,  # throughput
+            n_workers,  # n_workers
         ]
-
         return total_loss / m, acc, gnorm
 
 
@@ -3238,16 +3348,14 @@ class DistributedGradientAvgStrategy(ClientStrategy):
 
         self._local_epoch = 0
 
-        self.metrics = pb.Dataframe(
+        self.metrics = pd.DataFrame(
             columns=[
                 "worker_id",
-                "step",
                 "local_epoch",
                 "time",
                 "loss",
                 "gnorm",
                 "throughput",
-                "batch_len",
                 "n_batches",
                 "batch_size",
                 "seed",
@@ -3278,7 +3386,7 @@ class DistributedGradientAvgStrategy(ClientStrategy):
     @time_wrapper
     def _handle_step(self, _msg: dict) -> None:
         """Ejecuta un paso de entrenamiento y envía resultado al servidor."""
-        t0 = time.elapsed()
+        t0 = time.perf_counter()
         self._load_data(_msg)
 
         if self._W0 is None:
@@ -3329,8 +3437,7 @@ class DistributedGradientAvgStrategy(ClientStrategy):
         )
         log.debug(f"Resultado enviado | loss={loss:.4f}")
 
-        t1 = time.elapsed()
-
+        t1 = time.perf_counter()
         elapse_time = t1 - t0
 
         self.metrics.loc[len(self.metrics)] = [
@@ -3338,7 +3445,7 @@ class DistributedGradientAvgStrategy(ClientStrategy):
             self._local_epoch,
             elapse_time,
             loss,
-            gnorm: model._compute_grad_norm(),
+            model._compute_grad_norm(),
             len(X_b) / elapse_time,
             n_batches,
             batch_size,
@@ -3380,6 +3487,55 @@ class DistributedGradientAvgStrategy(ClientStrategy):
 # ## Run Server/Client
 
 
+def run_local(workers: int = 1, lr=0.05, epochs=200):
+    net = Network()
+    net.add(Dense(784, 10, ReLU(), RandomNormal(0.01)))
+    net.add(Dense(10, 10, Softmax(), RandomNormal(0.01)))
+
+    strategy = GradientAvgStrategy(batch_size=len(X_train) // workers)
+
+    save_folder = f"local_metrics__{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    os.makedirs(save_folder, exist_ok=True)
+
+    try:
+        model = Model(net, MeanSquaredError(), SGD(lr), strategy=strategy)
+        history = model.fit(
+            X_train,
+            y_train,
+            epochs=epochs,
+            verbose_epoch=25,
+            X_val=X_test,
+            y_val=y_test,
+        )
+        history.set_output_dir(save_folder)
+        history.plot()
+        model.evaluate(X_test, y_test)
+        model.confusion_matrix(X_test, y_test)
+        model.classification_report(X_test, y_test)
+        history.save_all()
+    except Exception as e:
+        print(e)
+    finally:
+        strategy.metrics.to_csv(f"{save_folder}/metrics_server.csv", index=False)
+
+        # Guardar descripción de métricas
+        description = strategy.metrics.describe(
+            percentiles=[0.1, 0.5, 0.9], include="all"
+        )
+        description.to_csv(f"{save_folder}/metrics_description.csv", index=True)
+
+        # guardar args
+        with open(f"{save_folder}/args.json", "w") as f:
+            json.dump(
+                {
+                    "lr": lr,
+                    "epochs": epochs,
+                    "workers": workers,
+                },
+                f,
+            )
+
+
 # %%
 def run_server(
     server_host: str,
@@ -3398,7 +3554,8 @@ def run_server(
     )
     strategy.start_server(server_port, server_host)
 
-    save_folder = f"metrics__{time.now().strftime('%Y%m%d_%H%M%S')}"
+    save_folder = f"metrics__{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    os.makedirs(save_folder, exist_ok=True)
 
     try:
         model = Model(net, MeanSquaredError(), SGD(lr), strategy=strategy)
@@ -3420,10 +3577,12 @@ def run_server(
         print(e)
     finally:
         strategy.stop_server()
-        strategy.metrics.to_csv(f"{metrics_folder}/metrics_server.csv", index=False)
+        strategy.metrics.to_csv(f"{save_folder}/metrics_server.csv", index=False)
 
         # Guardar descripción de métricas
-        description = strategy.metrics.describe(percentiles=[0.1, 0.5, 0.9], include='all')
+        description = strategy.metrics.describe(
+            percentiles=[0.1, 0.5, 0.9], include="all"
+        )
         description.to_csv(f"{save_folder}/metrics_description.csv", index=True)
 
         # guardar args
@@ -3448,7 +3607,8 @@ def run_client(server_host: str, server_port: int, lr=float):
     model = Model(net, MeanSquaredError(), SGD(lr))
     strategy = DistributedGradientAvgStrategy(server_host, server_port)
 
-    save_folder = f"metrics_client__{time.now().strftime('%Y%m%d_%H%M%S')}"
+    save_folder = f"metrics_client__{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    os.makedirs(save_folder, exist_ok=True)
 
     try:
         strategy.connect()
@@ -3461,7 +3621,9 @@ def run_client(server_host: str, server_port: int, lr=float):
         strategy.metrics.to_csv(f"{save_folder}/metrics_client.csv", index=False)
 
         # Guardar la descripción de las métricas (stats generales)
-        description = strategy.metrics.describe(percentiles=[0.1, 0.5, 0.9], include='all')
+        description = strategy.metrics.describe(
+            percentiles=[0.1, 0.5, 0.9], include="all"
+        )
         description.to_csv(f"{save_folder}/metrics_description.csv", index=True)
 
         # Guardar args
@@ -3475,6 +3637,7 @@ def run_client(server_host: str, server_port: int, lr=float):
                 f,
             )
 
+
 def main():
     # arg 1 --server | --client
     # arg 2 --host
@@ -3487,6 +3650,7 @@ def main():
     print_system_info()
 
     parser = argparse.ArgumentParser(description="Distributed Gradient Averaging")
+    parser.add_argument("--local", action="store_true")
     parser.add_argument("--server", action="store_true")
     parser.add_argument("--client", action="store_true")
     parser.add_argument("--host", default="0.0.0.0")
@@ -3499,14 +3663,16 @@ def main():
     args = parser.parse_args()
     print(args)
 
-    if args.server:
+    if args.local:
+        run_local(args.workers, args.lr, args.epochs)
+    elif args.server:
         run_server(
             args.host, args.port, args.workers, args.min_workers, args.lr, args.epochs
         )
     elif args.client:
         run_client(args.host, args.port, args.lr)
     else:
-        raise ValueError("No se especificó --server o --client")
+        raise ValueError("No se especificó --local, --server o --client")
 
     return 0
 
