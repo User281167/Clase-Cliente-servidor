@@ -1,0 +1,19 @@
+from .elu import ELU
+from .leaky_relu import LeakyReLU
+from .linear import Linear
+from .relu import ReLU
+from .sigmoid import Sigmoid
+from .softmax import Softmax
+from .tanh import Tanh
+
+ACTIVATIONS = {
+    "relu": ReLU,
+    "leaky_relu": LeakyReLU,
+    "sigmoid": Sigmoid,
+    "tanh": Tanh,
+    "softmax": Softmax,
+    "elu": ELU,
+    "linear": Linear,
+}
+
+__all__ = ["ReLU", "LeakyReLU", "Linear", "Sigmoid", "ELU", "Tanh", "Softmax"]
