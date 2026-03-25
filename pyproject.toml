@@ -1,0 +1,25 @@
+[project]
+name = "cliente-servidor"
+version = "0.1.0"
+description = "Proyectos del curso de arquitectura cliente servidor, entrenamiento de modelos de IA locales y distribuidos"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "black>=26.3.1",
+    "matplotlib>=3.10.8",
+    "numpy>=2.2.6",
+]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[dependency-groups]
+dev = [
+    "isort>=8.0.1",
+]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
