@@ -1,3 +1,4 @@
+from .activation import ActivationFunction
 from .elu import ELU
 from .leaky_relu import LeakyReLU
 from .linear import Linear
@@ -16,4 +17,22 @@ ACTIVATIONS = {
     "linear": Linear,
 }
 
-__all__ = ["ReLU", "LeakyReLU", "Linear", "Sigmoid", "ELU", "Tanh", "Softmax"]
+
+def get_activation(activation: str) -> ActivationFunction:
+    if activation not in ACTIVATIONS:
+        raise ValueError(f"Activation {activation} not supported")
+    return ACTIVATIONS[activation]()
+
+
+__all__ = [
+    "ACTIVATIONS",
+    "get_activation",
+    "ReLU",
+    "LeakyReLU",
+    "Linear",
+    "Sigmoid",
+    "ELU",
+    "Tanh",
+    "Softmax",
+    "ActivationFunction",
+]
