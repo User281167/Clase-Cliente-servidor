@@ -1,24 +1,23 @@
-# %% [markdown]
-# ## Inhabilitar uso de threads en numpy
+# Inhabilitar uso de threads en numpy
 #
 # Inhabilitar cuando se use procesos físicos para evitar competencia de recursos
 #
 # Ejecutar antes de import numpy
-#
-# **Si se ejecuto con threads y se quiere ejecutar con cpu física primero se debe reiniciar el kernel y ejecutar la celda, igualmente si se ejecuto la celda y quiere activar de nuevo los threads para numpy**
+# Si se ejecuto con threads y se quiere ejecutar con cpu física primero se debe reiniciar el kernel y ejecutar la celda
+# Igualmente si se ejecuto la celda y quiere activar de nuevo los threads para numpy
 
 from __future__ import annotations
 
-import os
 import platform
 import time
 from functools import wraps
 
 import cpuinfo
+import numpy as np
 import psutil
 import torch
 
-# %%
+#
 # import os
 # # ── Configuración de threads ──────────────────────────────
 # os.environ["OMP_NUM_THREADS"]     = "1"
@@ -26,7 +25,7 @@ import torch
 # os.environ["OPENBLAS_NUM_THREADS"] = "1"
 # os.environ["NUMEXPR_NUM_THREADS"] = "1"
 # ## Librerías - utilidades
-# %%
+#
 
 
 def print_system_info():
@@ -42,9 +41,6 @@ def print_system_info():
 
     ram = psutil.virtual_memory()
     print("RAM (GB):", round(ram.total / (1024**3), 2))
-    print(f"Cuda available: {torch.cuda.is_available()}")
-    print(f"cpu_count: {os.cpu_count()}")
-
     print(f"CUDA available: {torch.cuda.is_available()}")
 
     if torch.cuda.is_available():
@@ -83,4 +79,20 @@ def time_wrapper(func):
     return wrapper
 
 
-__all__ = ["print_system_info", "time_wrapper"]
+def get_batches(X: np.ndarray, y: np.ndarray, batch_size: int, shuffle: bool = True):
+    """
+    Generador de mini-batches.
+
+    Para N muestras y tamaño B, produce ceil(N/B) batches.
+    Si shuffle=True, permuta antes de particionar (esencial en SGD/mini-batch
+    para no introducir sesgo por orden de clase).
+    """
+    n = len(X)
+    idx = np.random.permutation(n) if shuffle else np.arange(n)
+
+    for start in range(0, n, batch_size):
+        batch_idx = idx[start : start + batch_size]
+        yield X[batch_idx], y[batch_idx]
+
+
+__all__ = ["print_system_info", "time_wrapper", "get_batches"]
