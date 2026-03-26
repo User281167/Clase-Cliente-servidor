@@ -1,4 +1,7 @@
+import os
+
 import matplotlib.pyplot as plt
+import pandas as pd
 
 
 class History:
@@ -19,13 +22,23 @@ class History:
         epochs         : list[int]    — índices de epoch registrados
     """
 
-    def __init__(self):
+    def __init__(self, output_dir: str | None = None):
         self.train_loss = []
         self.train_accuracy = []
         self.train_grad_norm = []
         self.val_loss = []
         self.val_accuracy = []
         self.epochs = []
+        self.output_dir = output_dir
+
+        if output_dir is not None:
+            os.makedirs(self.output_dir, exist_ok=True)
+
+    def set_output_dir(self, output_dir: str) -> None:
+        self.output_dir = output_dir
+
+        if output_dir is not None:
+            os.makedirs(self.output_dir, exist_ok=True)
 
     def record(
         self,
@@ -103,6 +116,11 @@ class History:
 
         plt.suptitle("Training History", fontsize=13, fontweight="bold")
         plt.tight_layout()
+
+        if self.output_dir is not None:
+            path = os.path.join(self.output_dir, "training_plot.png")
+            plt.savefig(path, dpi=120)
+
         plt.show()
 
     def plot_comparison(
@@ -186,6 +204,78 @@ class History:
                 print(f"│{name:<21}│{best:^11.4f}│{last:^11.4f}│")
 
         print(f"└{'─' * 21}┴{'─' * 11}┴{'─' * 11}┘")
+
+    def save_csv(self, filename: str = "history.csv") -> None:
+        data = {
+            "epoch": self.epochs,
+            "train_loss": self.train_loss,
+            "train_acc": self.train_accuracy,
+            "grad_norm": self.train_grad_norm,
+        }
+
+        if self.val_loss:
+            data["val_loss"] = self.val_loss
+            data["val_acc"] = self.val_accuracy
+
+        df = pd.DataFrame(data)
+        path = os.path.join(self.output_dir, filename)
+        df.to_csv(path, index=False)
+
+    def save_plots(self):
+        # Loss
+        plt.figure()
+        plt.plot(self.epochs, self.train_loss, label="Train")
+        if self.val_loss:
+            plt.plot(self.epochs, self.val_loss, label="Val")
+
+        plt.legend()
+        plt.title("Loss")
+        plt.savefig(os.path.join(self.output_dir, "loss.png"))
+        plt.close()
+
+        # Accuracy
+        plt.figure()
+        plt.plot(self.epochs, self.train_accuracy, label="Train")
+        if self.val_accuracy:
+            plt.plot(self.epochs, self.val_accuracy, label="Val")
+
+        plt.legend()
+        plt.title("Accuracy")
+        plt.savefig(os.path.join(self.output_dir, "accuracy.png"))
+        plt.close()
+
+        # Grad norm
+        if any(g > 0 for g in self.train_grad_norm):
+            plt.figure()
+            plt.plot(self.epochs, self.train_grad_norm)
+            plt.title("Gradient Norm")
+            plt.savefig(os.path.join(self.output_dir, "grad_norm.png"))
+            plt.close()
+
+    def save_summary(self):
+        path = os.path.join(self.output_dir, "summary.txt")
+
+        with open(path, "w") as f:
+            for name, values, fn in [
+                ("train_loss", self.train_loss, min),
+                ("train_acc", self.train_accuracy, max),
+                ("grad_norm", self.train_grad_norm, min),
+            ]:
+                if values:
+                    f.write(f"{name}: best={fn(values):.4f}, last={values[-1]:.4f}\n")
+
+            if self.val_loss:
+                f.write(
+                    f"val_loss: best={min(self.val_loss):.4f}, last={self.val_loss[-1]:.4f}\n"
+                )
+                f.write(
+                    f"val_acc: best={max(self.val_accuracy):.4f}, last={self.val_accuracy[-1]:.4f}\n"
+                )
+
+    def save_all(self):
+        self.save_csv()
+        self.save_plots()
+        self.save_summary()
 
     def __repr__(self) -> str:
         if not self.epochs:

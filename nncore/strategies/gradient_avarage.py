@@ -1,4 +1,7 @@
+import time
+
 import numpy as np
+import pandas as pd
 
 from nncore.utils import get_batches
 
@@ -44,9 +47,24 @@ class GradAvarageStrategy(TrainingStrategy):
     def __init__(self, batch_size: int):
         self.batch_size = batch_size
 
-    def step(self, model, X, y):
-        layers = model.network.trainable_layers()
+        self._local_epoch = 0
 
+        self.metrics = pd.DataFrame(
+            columns=[
+                "local_epoch",
+                "time",
+                "loss",
+                "gnorm",
+                "throughput",
+                "batch_size",
+            ]
+        )
+
+    def step(self, model, X, y):
+        t0 = time.perf_counter()
+        self._local_epoch += 1
+
+        layers = model.network.trainable_layers()
         grad_acc = [
             {"W": np.zeros_like(l.weights), "b": np.zeros_like(l.bias)} for l in layers
         ]
@@ -74,7 +92,19 @@ class GradAvarageStrategy(TrainingStrategy):
             layer.d_weights = grad_acc[i]["W"] / n_batches
             layer.d_bias = grad_acc[i]["b"] / n_batches
 
-        gnorm = model.compute_grad_norm()
         model.optimizer.step(layers)
 
-        return epoch_loss / n_batches, epoch_acc / n_batches, gnorm
+        epoch_gnorm = model.compute_grad_norm()
+        elapsed = time.perf_counter() - t0
+        throughput = self.batch_size / elapsed
+
+        self.metrics.loc[len(self.metrics)] = {
+            "local_epoch": self._local_epoch,
+            "time": elapsed,
+            "loss": epoch_loss / n_batches,
+            "gnorm": epoch_gnorm,
+            "throughput": throughput,
+            "batch_size": self.batch_size,
+        }
+
+        return epoch_loss / n_batches, epoch_acc / n_batches, epoch_gnorm

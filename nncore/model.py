@@ -23,7 +23,7 @@ class Model:
         network: "Network",
         cost: "CostFunction",
         optimizer: "Optimizer",
-        strategy: "TrainingStrategy",
+        strategy: TrainingStrategy | None = None,
     ):
         self.network = network
         self.cost = cost
