@@ -1,3 +1,5 @@
+from typing import Literal
+
 from .activation import ActivationFunction
 from .elu import ELU
 from .leaky_relu import LeakyReLU
@@ -17,11 +19,15 @@ ACTIVATIONS = {
     "linear": Linear,
 }
 
+ActivationName = Literal[
+    "relu", "leaky_relu", "sigmoid", "tanh", "softmax", "elu", "linear"
+]
 
-def get_activation(activation: str) -> ActivationFunction:
+
+def get_activation(activation: ActivationName, **kwargs) -> ActivationFunction:
     if activation not in ACTIVATIONS:
         raise ValueError(f"Activation {activation} not supported")
-    return ACTIVATIONS[activation]()
+    return ACTIVATIONS[activation](**kwargs)
 
 
 __all__ = [

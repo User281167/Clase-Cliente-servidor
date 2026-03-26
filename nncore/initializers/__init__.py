@@ -1,3 +1,5 @@
+from typing import Literal
+
 from .he_normal import HeNormal
 from .he_uniform import HeUniform
 from .random_normal import RandomNormal
@@ -13,14 +15,17 @@ INITIALIZERS = {
     "he_uniform": HeUniform,
 }
 
+InitializerName = Literal[
+    "random_normal", "xavier_uniform", "xavier_normal", "he_normal", "he_uniform"
+]
 
-def get_initializer(name: str) -> WeightInitializer:
-    name = name.lower()
+
+def get_initializer(name: InitializerName, **kwargs) -> WeightInitializer:
     if name not in INITIALIZERS:
         raise ValueError(
-            f"Unknown initializer '{name}'. Available: {list(INITIALIZERS.keys())}"
+            f"Unknown initializer: {name}, available initializers: {list(INITIALIZERS.keys())}"
         )
-    return INITIALIZERS[name]()
+    return INITIALIZERS[name](**kwargs)
 
 
 __all__ = [
