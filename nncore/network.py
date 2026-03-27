@@ -1,4 +1,6 @@
 import numpy as np
+from rich.console import Console
+from rich.table import Table
 
 
 # ──────────────────────────────────────────────
@@ -223,7 +225,7 @@ class Network:
 
         Ejemplo:
         ┌─────────────────────────────────────────────────┐
-        │                  Network Summary                 │
+        │                  Network Summary                │
         ├──────────────────────┬───────────┬──────────────┤
         │ Layer                │ Shape     │ Params       │
         ├──────────────────────┼───────────┼──────────────┤
@@ -234,29 +236,32 @@ class Network:
         │ Total params         │           │ 101,770      │
         └─────────────────────────────────────────────────┘
         """
-        sep = "─" * 52
+        console = Console()
+        table = Table(title="Network Summary", show_lines=True)
+
+        table.add_column("Layer", style="cyan")
+        table.add_column("Shape", justify="center", style="magenta")
+        table.add_column("Params", justify="right", style="green")
+
         total = 0
 
-        print(f"┌{sep}┐")
-        print(f"│{'Network Summary':^52}│")
-        print(f"├{'─' * 22}┬{'─' * 11}┬{'─' * 16}┤")
-        print(f"│{'Layer':<22}│{'Shape':^11}│{'Params':>14}  │")
-        print(f"├{'─' * 22}┼{'─' * 11}┼{'─' * 16}┤")
-
         for layer in self.layers:
-            if layer.weights is not None:
+            if getattr(layer, "weights", None) is not None:
                 name = f"{layer.__class__.__name__} ({layer.activation.__class__.__name__})"
                 shape = f"{layer.input_size}→{layer.output_size}"
                 params = layer.weights.size + layer.bias.size
                 total += params
-                print(f"│{name:<22}│{shape:^11}│{params:>14,}  │")
+
+                table.add_row(name, shape, f"{params:,}")
             else:
                 name = repr(layer)
-                print(f"│{name:<22}│{'—':^11}│{'0':>14}  │")
+                table.add_row(name, "—", "0")
 
-        print(f"├{'─' * 22}┴{'─' * 11}┴{'─' * 16}┤")
-        print(f"│{'Total params':<22}  {total:>26,}  │")
-        print(f"└{sep}┘")
+        # fila final (total)
+        table.add_section()
+        table.add_row("Total params", "", f"[bold]{total:,}[/bold]")
+
+        console.print(table)
 
     def __repr__(self) -> str:
         lines = [f"Network({len(self.layers)} layers)"]
