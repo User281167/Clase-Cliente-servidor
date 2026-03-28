@@ -68,3 +68,6 @@ class Layer(ABC):
             f"out={self.output_size}, "
             f"activation={self.activation.__class__.__name__})"
         )
+
+    def compute_output_shape(self, input_shape):
+        return input_shape

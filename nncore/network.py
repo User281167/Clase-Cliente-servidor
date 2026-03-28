@@ -78,7 +78,6 @@ class Network:
     # ──────────────────────────────────────────
     # Forward
     # ──────────────────────────────────────────
-
     def forward(self, X: np.ndarray, training: bool = False) -> np.ndarray:
         """
         Propaga X por todas las capas en orden.
@@ -104,7 +103,6 @@ class Network:
     # ──────────────────────────────────────────
     # Backward
     # ──────────────────────────────────────────
-
     def backward(self, delta: np.ndarray) -> np.ndarray:
         """
         Propaga el gradiente en orden inverso.
@@ -219,7 +217,7 @@ class Network:
             if hasattr(layer, "training"):
                 layer.training = training
 
-    def summary(self) -> None:
+    def summary(self, input_shape=None) -> None:
         """
         Imprime la arquitectura de la red con shapes y parámetros.
 
@@ -244,20 +242,26 @@ class Network:
         table.add_column("Params", justify="right", style="green")
 
         total = 0
+        shape = input_shape
 
         for layer in self.layers:
-            if getattr(layer, "weights", None) is not None:
+            if hasattr(layer, "activation") and layer.activation is not None:
                 name = f"{layer.__class__.__name__} ({layer.activation.__class__.__name__})"
-                shape = f"{layer.input_size}→{layer.output_size}"
+            else:
+                name = layer.__class__.__name__
+
+            new_shape = layer.compute_output_shape(shape)
+            shape_str = f"{shape} → {new_shape}"
+            shape = new_shape
+
+            if getattr(layer, "weights", None) is not None:
                 params = layer.weights.size + layer.bias.size
                 total += params
-
-                table.add_row(name, shape, f"{params:,}")
             else:
-                name = repr(layer)
-                table.add_row(name, "—", "0")
+                params = 0
 
-        # fila final (total)
+            table.add_row(name, shape_str, f"{params:,}")
+
         table.add_section()
         table.add_row("Total params", "", f"[bold]{total:,}[/bold]")
 
