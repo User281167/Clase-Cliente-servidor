@@ -3,18 +3,14 @@ import tempfile
 import numpy as np
 import torchvision
 import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
 
 
 class Cifar10DataSampler:
     """
     Dataset sampler para CIFAR-10.
 
-    Cargar los datos de manera eficiente utilizando torchvision.
-    Woker carga todo el dataset en memoria antes de empezar a entrenar.
-
-    Servidor envia epoch, rank, batch_size y num_workers al cliente.
-    El cliente utiliza estos valores para configurar el dataloader.
-    Pytorch se encarga de hacer shuffle y evitar que se solapen los batches.
+    Cargar los datos en RAM utilizando torchvision.
     """
 
     def __init__(
@@ -33,6 +29,7 @@ class Cifar10DataSampler:
         Args:
             root (str | None): Directorio donde se guardarán los datos. Si es None, se usa un directorio temporal.
             train (bool): Si es True, carga el conjunto de entrenamiento; si es False, carga el conjunto de prueba.
+            normalize (bool): Si es True, normaliza los datos valores entre -1 y 1, False valores entre 0 y 1.
         """
 
         self.grayscale = grayscale
@@ -48,74 +45,50 @@ class Cifar10DataSampler:
         if grayscale:
             transform_list.append(transforms.Grayscale(num_output_channels=1))
 
+        transform_list.append(transforms.ToTensor())  # valores [0,1] float32
+
         if normalize:
             # valores de -1 a 1
             mean = (0.5,) if grayscale else (0.5, 0.5, 0.5)
             std = (0.5,) if grayscale else (0.5, 0.5, 0.5)
             transform_list.append(transforms.Normalize(mean=mean, std=std))
 
-        transform_list.append(transforms.ToTensor())
         transform = transforms.Compose(transform_list)
 
-        self.dataset = torchvision.datasets.CIFAR10(
+        dataset = torchvision.datasets.CIFAR10(
             root=root, train=train, download=True, transform=transform
         )
 
-    def __len__(self):
-        return len(self.dataset)
+        # cargar en RAM
+        loader = DataLoader(
+            dataset,
+            batch_size=len(dataset),  # todo el dataset
+            num_workers=0,
+            shuffle=False,
+        )
+        images, labels = next(iter(loader))  # Tensor [N, C, H, W], Tensor [N]
+
+        # Convertir a NumPy
+        self._x = images.numpy().astype(np.float32)  # (N, C, H, W)
+        self._y = labels.numpy().astype(np.int64)  # (N,)
+
+        if self.flatten:
+            self._x = self._x.reshape(len(self._x), -1)  # (N, C*H*W)
+
+        if self.one_hot:
+            self._y = self._one_hot_batch(self._y)  # (N, n_classes)
+
+    def __len__(self) -> int:
+        return len(self._x)
 
     def __getitem__(self, idx):
         """
-        Retorna el item en el índice o lista `idx` del dataset.
-        Convierte los datos a numpy antes de retornarlos.
+        Indexación O(1) — los datos ya están en RAM como NumPy arrays.
+        Soporta int, slice, list y np.ndarray.
         """
-        # convertir numpy scalars a int
-        if isinstance(idx, (np.integer, np.int64)):
-            idx = int(idx)
+        return self._x[idx], self._y[idx]
 
-        if isinstance(idx, int):
-            x, y = self.dataset[idx]
-            x_np = np.array(x, dtype=np.float32)
-
-            if self.flatten:
-                x_np = x_np.flatten()
-            if self.one_hot:
-                y = self.one_hot_encode(y)
-
-            return x_np, y
-        elif (
-            isinstance(idx, slice)
-            or isinstance(idx, list)
-            or isinstance(idx, np.ndarray)
-        ):
-            xs, ys = [], []
-
-            if isinstance(idx, slice):
-                indices = range(*idx.indices(len(self.dataset)))
-            else:
-                indices = idx
-
-            for i in indices:
-                x, y = self.dataset[i]
-                x_np = np.array(x, dtype=np.float32)
-
-                if self.flatten:
-                    x_np = x_np.flatten()
-                if self.one_hot:
-                    y = self.one_hot_encode(y)
-
-                xs.append(x_np)
-                ys.append(y)
-            return np.stack(xs), np.stack(ys)
-        else:
-            raise TypeError(f"Invalid index type: {type(idx)}")
-
-    def one_hot_encode(self, y: int | np.ndarray) -> np.ndarray:
-        if isinstance(y, int):
-            vec = np.zeros(self.n_classes, dtype=np.float32)
-            vec[y] = 1.0
-            return vec
-        else:
-            oh = np.zeros((len(y), self.n_classes), dtype=np.float32)
-            oh[np.arange(len(y)), y] = 1.0
-            return oh
+    def _one_hot_batch(self, y: np.ndarray) -> np.ndarray:
+        oh = np.zeros((len(y), self.n_classes), dtype=np.float32)
+        oh[np.arange(len(y)), y] = 1.0
+        return oh
