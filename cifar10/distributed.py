@@ -16,11 +16,11 @@ from .client import DistributedGradientAvgStrategy
 from .server import ServerGradientAvgStrategy
 
 
-def get_model(lr: float, strategy=None) -> Model:
+def get_model(lr: float, strategy=None, grayscale: bool = False) -> Model:
     normal = HeUniform()
 
     net = Network()
-    net.add(Dense(1024, 512, LeakyReLU(), normal))
+    net.add(Dense(1024 if grayscale else 3072, 512, LeakyReLU(), normal))
     net.add(Dropout(p=0.2))
     net.add(Dense(512, 256, LeakyReLU(), normal))
     net.add(Dense(256, 128, LeakyReLU(), normal))

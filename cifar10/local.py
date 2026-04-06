@@ -11,14 +11,18 @@ from .cifar10_data import Cifar10Data
 
 
 @time_wrapper
-def main():
+def run(
+    grayscale: bool = False,
+    lr: float = 0.1,
+    batch_size: int = 5000,
+    epochs: int = 100,
+):
     print_system_info()
 
-    # normal = RandomNormal(0.01)
     normal = HeUniform()
 
     net = Network()
-    net.add(Dense(1024, 512, LeakyReLU(), normal))
+    net.add(Dense(1024 if grayscale else 3072, 512, LeakyReLU(), normal))
     net.add(Dropout(p=0.2))
     net.add(Dense(512, 256, LeakyReLU(), normal))
     net.add(Dense(256, 128, LeakyReLU(), normal))
@@ -26,11 +30,11 @@ def main():
     net.add(Dense(128, 10, Softmax(), normal))
     net.summary()
 
-    strategy = GradAvarageStrategy(batch_size=5000)
-    model = Model(net, MeanSquaredError(), SGD(learning_rate=0.1), strategy=strategy)
+    strategy = GradAvarageStrategy(batch_size=batch_size)
+    model = Model(net, MeanSquaredError(), SGD(learning_rate=lr), strategy=strategy)
 
     data = Cifar10Data()
-    data.load_data(grayscale=True)
+    data.load_data(grayscale=grayscale)
     data.plot_random_samples()
     X_train, y_train, X_test, y_test = data.get_data()
 
@@ -43,11 +47,11 @@ def main():
     history = model.fit(
         X_train,
         y_train,
-        epochs=100,
+        epochs=epochs,
         X_val=X_test,
         y_val=y_test,
         verbose=True,
-        verbose_epoch=5,
+        verbose_epoch=epochs // 10,
     )
 
     history.plot()
@@ -57,4 +61,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run()
