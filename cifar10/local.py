@@ -1,9 +1,9 @@
 from nncore import Model, Network
-from nncore.activations import LeakyReLU, Softmax
-from nncore.costs import MeanSquaredError
+from nncore.activations import LeakyReLU
+from nncore.costs import CrossEntropy
 from nncore.initializers import HeUniform
 from nncore.layers import Dense, Dropout
-from nncore.optimizers import SGD
+from nncore.optimizers import Adam
 from nncore.strategies import GradAvarageStrategy
 from nncore.utils import print_system_info, time_wrapper
 
@@ -13,7 +13,8 @@ from .cifar10_data import Cifar10Data
 @time_wrapper
 def run(
     grayscale: bool = False,
-    lr: float = 0.1,
+    normalize: bool = False,
+    lr: float = 0.001,
     batch_size: int = 5000,
     epochs: int = 100,
 ):
@@ -22,19 +23,17 @@ def run(
     normal = HeUniform()
 
     net = Network()
-    net.add(Dense(1024 if grayscale else 3072, 512, LeakyReLU(), normal))
+    net.add(Dense(1024 if grayscale else 3072, 128, LeakyReLU(), normal))
     net.add(Dropout(p=0.2))
-    net.add(Dense(512, 256, LeakyReLU(), normal))
-    net.add(Dense(256, 128, LeakyReLU(), normal))
-    net.add(Dropout(p=0.1))
-    net.add(Dense(128, 10, Softmax(), normal))
+    net.add(Dense(128, 32, LeakyReLU(), normal))
+    net.add(Dense(32, 10, LeakyReLU(), normal))
     net.summary()
 
     strategy = GradAvarageStrategy(batch_size=batch_size)
-    model = Model(net, MeanSquaredError(), SGD(learning_rate=lr), strategy=strategy)
+    model = Model(net, CrossEntropy(), Adam(learning_rate=lr), strategy=strategy)
 
     data = Cifar10Data()
-    data.load_data(grayscale=grayscale)
+    data.load_data(grayscale=grayscale, normalize=normalize)
     data.plot_random_samples()
     X_train, y_train, X_test, y_test = data.get_data()
 
@@ -61,4 +60,4 @@ def run(
 
 
 if __name__ == "__main__":
-    run()
+    run(grayscale=True, normalize=True)

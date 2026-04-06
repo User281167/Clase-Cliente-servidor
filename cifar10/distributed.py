@@ -4,8 +4,8 @@ import os
 from datetime import datetime
 
 from nncore import Model, Network
-from nncore.activations import LeakyReLU, Softmax
-from nncore.costs import MeanSquaredError
+from nncore.activations import LeakyReLU
+from nncore.costs import CrossEntropy
 from nncore.initializers import HeUniform
 from nncore.layers import Dense, Dropout
 from nncore.optimizers import Adam
@@ -20,15 +20,13 @@ def get_model(lr: float, strategy=None, grayscale: bool = False) -> Model:
     normal = HeUniform()
 
     net = Network()
-    net.add(Dense(1024 if grayscale else 3072, 512, LeakyReLU(), normal))
+    net.add(Dense(1024 if grayscale else 3072, 128, LeakyReLU(), normal))
     net.add(Dropout(p=0.2))
-    net.add(Dense(512, 256, LeakyReLU(), normal))
-    net.add(Dense(256, 128, LeakyReLU(), normal))
-    net.add(Dropout(p=0.1))
-    net.add(Dense(128, 10, Softmax(), normal))
+    net.add(Dense(128, 32, LeakyReLU(), normal))
+    net.add(Dense(32, 10, LeakyReLU(), normal))
     net.summary()
 
-    return Model(net, MeanSquaredError(), Adam(learning_rate=lr, beta1=0.85), strategy)
+    return Model(net, CrossEntropy(), Adam(learning_rate=lr), strategy=strategy)
 
 
 def run_server(

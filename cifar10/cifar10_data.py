@@ -6,6 +6,19 @@ import numpy as np
 import torchvision
 import torchvision.transforms as transforms
 
+cifar10_classes = (
+    "avión",
+    "automóvil",
+    "pájaro",
+    "gato",
+    "ciervo",
+    "perro",
+    "rana",
+    "caballo",
+    "barco",
+    "camión",
+)
+
 
 class Cifar10Data:
     def __init__(self, dataset_path: str | None = None):
@@ -17,12 +30,13 @@ class Cifar10Data:
         self.X_test = None
         self.y_test = None
 
-    def load_data(self, grayscale=False, flatten=True, one_hot=True):
+    def load_data(self, grayscale=False, flatten=True, one_hot=True, normalize=False):
         """
         Args:
-            grayscale (bool): convert to 1 channel
+            grayscale (bool): convertir a 1 canal
             flatten (bool): flatten image to vector
-            path (str): path to the dataset
+            one_hot (bool): one-hot encode labels
+            normalize (bool): normalize image a [-1, 1]
         Returns:
             X_train, y_train, X_test, y_test
         """
@@ -33,6 +47,11 @@ class Cifar10Data:
             transform_list.append(transforms.Grayscale(num_output_channels=1))
 
         transform_list.append(transforms.ToTensor())
+
+        if normalize:
+            mean = (0.5,) if grayscale else (0.5, 0.5, 0.5)
+            std = (0.5,) if grayscale else (0.5, 0.5, 0.5)
+            transform_list.append(transforms.Normalize(mean, std))
 
         if flatten:
             transform_list.append(transforms.Lambda(lambda x: x.view(-1)))
@@ -90,7 +109,7 @@ class Cifar10Data:
             else:
                 plt.imshow(samples[i].reshape(3, 32, 32).transpose(1, 2, 0))
 
-            plt.title(f"Label: {labels[i]}")
+            plt.title(f"{cifar10_classes[labels[i]]}")
             plt.axis("off")
 
         plt.show()
