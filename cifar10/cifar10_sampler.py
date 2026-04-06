@@ -22,6 +22,7 @@ class Cifar10DataSampler:
         root: str | None = None,
         train: bool = False,
         grayscale: bool = True,
+        normalize: bool = True,
         flatten: bool = True,
         one_hot: bool = True,
         n_classes: int = 10,
@@ -46,6 +47,12 @@ class Cifar10DataSampler:
 
         if grayscale:
             transform_list.append(transforms.Grayscale(num_output_channels=1))
+
+        if normalize:
+            # valores de -1 a 1
+            mean = (0.5,) if grayscale else (0.5, 0.5, 0.5)
+            std = (0.5,) if grayscale else (0.5, 0.5, 0.5)
+            transform_list.append(transforms.Normalize(mean=mean, std=std))
 
         transform_list.append(transforms.ToTensor())
         transform = transforms.Compose(transform_list)

@@ -20,10 +20,12 @@ def get_model(lr: float, strategy=None) -> Model:
     normal = HeUniform()
 
     net = Network()
-    net.add(Dense(1024, 128, LeakyReLU(), normal))
+    net.add(Dense(1024, 512, LeakyReLU(), normal))
     net.add(Dropout(p=0.2))
-    net.add(Dense(128, 32, LeakyReLU(), normal))
-    net.add(Dense(32, 10, Softmax(), normal))
+    net.add(Dense(512, 256, LeakyReLU(), normal))
+    net.add(Dense(256, 128, LeakyReLU(), normal))
+    net.add(Dropout(p=0.1))
+    net.add(Dense(128, 10, Softmax(), normal))
     net.summary()
 
     return Model(net, MeanSquaredError(), Adam(learning_rate=lr, beta1=0.85), strategy)
@@ -36,9 +38,15 @@ def run_server(
     min_workers: int = 1,
     lr=0.05,
     epochs=200,
+    grayscale=True,
+    normalize=True,
 ):
-    train_dataset = Cifar10DataSampler(train=True)
-    test_dataset = Cifar10DataSampler(train=False)
+    train_dataset = Cifar10DataSampler(
+        train=True, grayscale=grayscale, normalize=normalize
+    )
+    test_dataset = Cifar10DataSampler(
+        train=False, grayscale=grayscale, normalize=normalize
+    )
 
     strategy = ServerGradientAvgStrategy(
         batch_size=len(train_dataset) // workers, min_workers=min_workers
@@ -92,8 +100,12 @@ def run_server(
             )
 
 
-def run_client(server_host: str, server_port: int, lr: float):
-    train_dataset = Cifar10DataSampler(train=True)
+def run_client(
+    server_host: str, server_port: int, lr: float, grayscale: bool, normalize: bool
+):
+    train_dataset = Cifar10DataSampler(
+        train=True, grayscale=grayscale, normalize=normalize
+    )
 
     model = get_model(lr)
     strategy = DistributedGradientAvgStrategy(server_host, server_port)
@@ -149,16 +161,25 @@ def main():
     parser.add_argument("--min_workers", default=1, type=int)
     parser.add_argument("--lr", default=0.005, type=float)
     parser.add_argument("--epochs", default=200, type=int)
+    parser.add_argument("--grayscale", action="store_true")
+    parser.add_argument("--normalize", action="store_true")
 
     args = parser.parse_args()
     print(args)
 
     if args.server:
         run_server(
-            args.host, args.port, args.workers, args.min_workers, args.lr, args.epochs
+            args.host,
+            args.port,
+            args.workers,
+            args.min_workers,
+            args.lr,
+            args.epochs,
+            args.grayscale,
+            args.normalize,
         )
     elif args.client:
-        run_client(args.host, args.port, args.lr)
+        run_client(args.host, args.port, args.lr, args.grayscale, args.normalize)
     else:
         raise ValueError("No se especificó --server o --client")
 
